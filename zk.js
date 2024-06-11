@@ -10,20 +10,35 @@ app.use(express.json());
 const finished = util.promisify(stream.finished);
 
 app.post('/zk/getTokenAmounts', async (req, res) => {
-    const userIds = req.body.userIds;
-    const url = 'https://raw.githubusercontent.com/ZKsync-Association/zknation-data/main/eligibility_list.csv';
-    const response = await axios.get(url, {responseType: 'stream'});
-    const dataStream = response.data.pipe(csv());
+    try {
+        const userIds = req.body.userIds;
+        const url = 'https://raw.githubusercontent.com/ZKsync-Association/zknation-data/main/eligibility_list.csv';
+        const response = await axios.get(url, {responseType: 'stream'}).catch(err => {
+            console.error(err);
+            res.status(500).json({ error: 'Error fetching data' });
+            return;
+        });
 
-    const tokenAmounts = {};
-    dataStream.on('data', (row) => {
-        if (userIds.includes(row.userId)) {
-            tokenAmounts[row.userId] = row.tokenAmount;
-        }
-    });
+        const dataStream = response.data.pipe(csv());
 
-    await finished(dataStream);
-    res.json(tokenAmounts);
+        const tokenAmounts = {};
+        dataStream.on('data', (row) => {
+            if (userIds.includes(row.userId)) {
+                tokenAmounts[row.userId] = row.tokenAmount;
+            }
+        });
+
+        dataStream.on('error', (err) => {
+            console.error(err);
+            res.status(500).json({ error: 'Error processing data' });
+        });
+
+        await finished(dataStream);
+        res.json(tokenAmounts);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Unexpected server error' });
+    }
 });
 
 const port = process.env.PORT || 3000;
